@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.FinnishMetadata.Client;
@@ -54,7 +56,9 @@ public class FinnishEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
 
         // 3. Query remote API (Areena / Ruutu / Katsomo)
         info.SeriesProviderIds.TryGetValue(Plugin.ProviderId, out var seriesCompositeId);
-        string seriesName = !string.IsNullOrWhiteSpace(parsedFile.SeriesName) ? parsedFile.SeriesName : info.SeriesName;
+        string seriesName = !string.IsNullOrWhiteSpace(parsedFile.SeriesName)
+            ? parsedFile.SeriesName
+            : GetSeriesNameFromPath(info.Path) ?? info.Name;
 
         FinnishEpisodeItem? remoteEp = null;
         if (!string.IsNullOrWhiteSpace(seriesName))
@@ -109,5 +113,32 @@ public class FinnishEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
     public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken)
     {
         return _httpClientFactory.CreateClient().GetAsync(url, cancellationToken);
+    }
+
+    private static string? GetSeriesNameFromPath(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return null;
+        }
+
+        string? parentDir = Path.GetDirectoryName(filePath);
+        if (string.IsNullOrEmpty(parentDir))
+        {
+            return null;
+        }
+
+        string folderName = Path.GetFileName(parentDir);
+        if (folderName.StartsWith("Season ", StringComparison.OrdinalIgnoreCase) ||
+            folderName.StartsWith("Kausi ", StringComparison.OrdinalIgnoreCase))
+        {
+            string? seriesDir = Path.GetDirectoryName(parentDir);
+            if (!string.IsNullOrEmpty(seriesDir))
+            {
+                folderName = Path.GetFileName(seriesDir);
+            }
+        }
+
+        return Regex.Replace(folderName, @"\s*\(\d{4}\)\s*$", string.Empty).Trim();
     }
 }

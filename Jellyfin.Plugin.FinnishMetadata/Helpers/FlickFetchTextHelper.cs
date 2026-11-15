@@ -8,7 +8,7 @@ namespace Jellyfin.Plugin.FinnishMetadata.Helpers;
 public static class FlickFetchTextHelper
 {
     /// <summary>
-    /// Looks for a companion .txt file next to the media file (e.g. Episode.mkv -&gt; Episode.txt)
+    /// Looks for a companion .txt file next to the media file (e.g. Episode.mkv -> Episode.txt)
     /// and returns its cleaned description text. Ignores .srt files.
     /// </summary>
     public static string? ReadSidecarDescription(string? mediaFilePath)
@@ -33,18 +33,14 @@ public static class FlickFetchTextHelper
                 return null;
             }
 
-            string rawText = File.ReadAllText(txtPath, Encoding.UTF8);
-            if (string.IsNullOrWhiteSpace(rawText))
+            var lines = File.ReadAllLines(txtPath, Encoding.UTF8)
+                .Select(l => l.Trim())
+                .ToList();
+
+            if (lines.Count == 0)
             {
                 return null;
             }
-
-            var lines = rawText
-                .Split(new[] { "
-", "
-" }, StringSplitOptions.None)
-                .Select(l => l.Trim())
-                .ToList();
 
             // If line 1 duplicates the filename/title or Kausi/Jakso header and there are multiple lines, remove header line
             if (lines.Count > 1 &&
