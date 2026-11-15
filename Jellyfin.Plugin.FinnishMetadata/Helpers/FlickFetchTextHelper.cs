@@ -60,4 +60,47 @@ public static class FlickFetchTextHelper
             return null;
         }
     }
+
+    /// <summary>
+    /// Checks if the series folder or season folder contains a small text/id file (e.g. areena.txt, ruutu.txt, katsomo.txt, url.txt, tvshow.nfo)
+    /// or extracts an ID from the folder name itself.
+    /// </summary>
+    public static void PopulateIdsFromDirectory(string? path, ParsedFinnishFilename target)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        FinnishFilenameParser.ExtractIdsFromText(path, target);
+
+        try
+        {
+            string? dir = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+            {
+                return;
+            }
+
+            string[] candidateFiles = { "areena.txt", "ruutu.txt", "katsomo.txt", "url.txt", "id.txt", "tvshow.nfo" };
+            for (int depth = 0; depth < 2 && !string.IsNullOrEmpty(dir); depth++)
+            {
+                foreach (var name in candidateFiles)
+                {
+                    string full = Path.Combine(dir, name);
+                    if (File.Exists(full))
+                    {
+                        string content = File.ReadAllText(full, Encoding.UTF8).Trim();
+                        FinnishFilenameParser.ExtractIdsFromText(content, target);
+                    }
+                }
+
+                dir = Path.GetDirectoryName(dir);
+            }
+        }
+        catch
+        {
+            // Ignore IO errors
+        }
+    }
 }

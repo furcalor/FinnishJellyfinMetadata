@@ -29,6 +29,28 @@ public class FinnishMovieProvider : IRemoteMetadataProvider<Movie, MovieInfo>
     public async Task<IEnumerable<RemoteSearchResult>> GetSearchResults(MovieInfo searchInfo, CancellationToken cancellationToken)
     {
         var list = new List<RemoteSearchResult>();
+
+        string? explicitId = FinnishSeriesProvider.ResolveExplicitCompositeId(searchInfo.ProviderIds, searchInfo.Path);
+        if (!string.IsNullOrWhiteSpace(explicitId))
+        {
+            var single = await _apiClient.GetSeriesByIdAsync(explicitId, cancellationToken).ConfigureAwait(false);
+            if (single != null)
+            {
+                var res = new RemoteSearchResult
+                {
+                    Name = $"{single.Title} [{single.Source}]",
+                    Overview = single.Overview,
+                    ProductionYear = single.ProductionYear,
+                    PremiereDate = single.PremiereDate,
+                    ImageUrl = single.ImageUrl,
+                    SearchProviderName = Plugin.ProviderName
+                };
+                FinnishSeriesProvider.ApplyProviderIds(res, single);
+                list.Add(res);
+                return list;
+            }
+        }
+
         var items = await _apiClient.SearchSeriesAsync(searchInfo.Name, searchInfo.Year, cancellationToken).ConfigureAwait(false);
         foreach (var item in items)
         {
@@ -41,7 +63,7 @@ public class FinnishMovieProvider : IRemoteMetadataProvider<Movie, MovieInfo>
                 ImageUrl = item.ImageUrl,
                 SearchProviderName = Plugin.ProviderName
             };
-            res.SetProviderId(Plugin.ProviderId, item.CompositeId);
+            FinnishSeriesProvider.ApplyProviderIds(res, item);
             list.Add(res);
         }
 
@@ -58,9 +80,10 @@ public class FinnishMovieProvider : IRemoteMetadataProvider<Movie, MovieInfo>
             : null;
 
         FinnishMediaItem? media = null;
-        if (info.ProviderIds.TryGetValue(Plugin.ProviderId, out var id) && !string.IsNullOrWhiteSpace(id))
+        string? explicitId = FinnishSeriesProvider.ResolveExplicitCompositeId(info.ProviderIds, info.Path);
+        if (!string.IsNullOrWhiteSpace(explicitId))
         {
-            media = await _apiClient.GetSeriesByIdAsync(id, cancellationToken).ConfigureAwait(false);
+            media = await _apiClient.GetSeriesByIdAsync(explicitId, cancellationToken).ConfigureAwait(false);
         }
         else if (!string.IsNullOrWhiteSpace(info.Name))
         {
@@ -88,7 +111,7 @@ public class FinnishMovieProvider : IRemoteMetadataProvider<Movie, MovieInfo>
 
         if (media != null)
         {
-            movie.SetProviderId(Plugin.ProviderId, media.CompositeId);
+            FinnishSeriesProvider.ApplyProviderIds(movie, media);
         }
 
         result.Item = movie;

@@ -14,6 +14,10 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public const string ProviderName = "FinnishMetadata";
     public const string ProviderId = "FinnishMetadataId";
 
+    public const string YleProviderId = "YleAreena";
+    public const string RuutuProviderId = "Ruutu";
+    public const string KatsomoProviderId = "Katsomo";
+
     public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer)
         : base(applicationPaths, xmlSerializer)
     {

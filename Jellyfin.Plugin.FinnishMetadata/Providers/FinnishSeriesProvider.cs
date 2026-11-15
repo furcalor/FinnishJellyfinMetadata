@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.FinnishMetadata.Client;
+using Jellyfin.Plugin.FinnishMetadata.Helpers;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
@@ -28,9 +29,10 @@ public class FinnishSeriesProvider : IRemoteMetadataProvider<Series, SeriesInfo>
     {
         var results = new List<RemoteSearchResult>();
 
-        if (searchInfo.ProviderIds.TryGetValue(Plugin.ProviderId, out var existingId) && !string.IsNullOrWhiteSpace(existingId))
+        string? explicitId = ResolveExplicitCompositeId(searchInfo.ProviderIds, searchInfo.Path);
+        if (!string.IsNullOrWhiteSpace(explicitId))
         {
-            var single = await _apiClient.GetSeriesByIdAsync(existingId, cancellationToken).ConfigureAwait(false);
+            var single = await _apiClient.GetSeriesByIdAsync(explicitId, cancellationToken).ConfigureAwait(false);
             if (single != null)
             {
                 results.Add(ToSearchResult(single));
@@ -52,9 +54,10 @@ public class FinnishSeriesProvider : IRemoteMetadataProvider<Series, SeriesInfo>
         var result = new MetadataResult<Series>();
         FinnishMediaItem? media = null;
 
-        if (info.ProviderIds.TryGetValue(Plugin.ProviderId, out var compositeId) && !string.IsNullOrWhiteSpace(compositeId))
+        string? explicitId = ResolveExplicitCompositeId(info.ProviderIds, info.Path);
+        if (!string.IsNullOrWhiteSpace(explicitId))
         {
-            media = await _apiClient.GetSeriesByIdAsync(compositeId, cancellationToken).ConfigureAwait(false);
+            media = await _apiClient.GetSeriesByIdAsync(explicitId, cancellationToken).ConfigureAwait(false);
         }
 
         if (media == null && !string.IsNullOrWhiteSpace(info.Name))
@@ -79,7 +82,7 @@ public class FinnishSeriesProvider : IRemoteMetadataProvider<Series, SeriesInfo>
             PremiereDate = media.PremiereDate
         };
 
-        series.SetProviderId(Plugin.ProviderId, media.CompositeId);
+        ApplyProviderIds(series, media);
 
         result.Item = series;
         result.HasMetadata = true;
@@ -93,6 +96,71 @@ public class FinnishSeriesProvider : IRemoteMetadataProvider<Series, SeriesInfo>
         return _httpClientFactory.CreateClient().GetAsync(url, cancellationToken);
     }
 
+    internal static string? ResolveExplicitCompositeId(Dictionary<string, string> providerIds, string? itemPath)
+    {
+        if (providerIds.TryGetValue(Plugin.YleProviderId, out var yleId) && !string.IsNullOrWhiteSpace(yleId))
+        {
+            return $"areena:{FinnishApiClient.NormalizeIdOrUrl(yleId, "areena")}";
+        }
+
+        if (providerIds.TryGetValue(Plugin.RuutuProviderId, out var ruutuId) && !string.IsNullOrWhiteSpace(ruutuId))
+        {
+            return $"ruutu:{FinnishApiClient.NormalizeIdOrUrl(ruutuId, "ruutu")}";
+        }
+
+        if (providerIds.TryGetValue(Plugin.KatsomoProviderId, out var katsomoId) && !string.IsNullOrWhiteSpace(katsomoId))
+        {
+            return $"katsomo:{FinnishApiClient.NormalizeIdOrUrl(katsomoId, "katsomo")}";
+        }
+
+        if (providerIds.TryGetValue(Plugin.ProviderId, out var compositeId) && !string.IsNullOrWhiteSpace(compositeId))
+        {
+            return compositeId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(itemPath))
+        {
+            var parsed = new ParsedFinnishFilename();
+            FlickFetchTextHelper.PopulateIdsFromDirectory(itemPath, parsed);
+            if (!string.IsNullOrEmpty(parsed.YleId))
+            {
+                return $"areena:{parsed.YleId}";
+            }
+
+            if (!string.IsNullOrEmpty(parsed.RuutuId))
+            {
+                return $"ruutu:{parsed.RuutuId}";
+            }
+
+            if (!string.IsNullOrEmpty(parsed.KatsomoId))
+            {
+                return $"katsomo:{parsed.KatsomoId}";
+            }
+        }
+
+        return null;
+    }
+
+    internal static void ApplyProviderIds(IHasProviderIds target, FinnishMediaItem media)
+    {
+        target.SetProviderId(Plugin.ProviderId, media.CompositeId);
+        if (!string.IsNullOrEmpty(media.RawPlatformId))
+        {
+            if (media.Source == "YleAreena")
+            {
+                target.SetProviderId(Plugin.YleProviderId, media.RawPlatformId);
+            }
+            else if (media.Source == "Ruutu")
+            {
+                target.SetProviderId(Plugin.RuutuProviderId, media.RawPlatformId);
+            }
+            else if (media.Source == "Katsomo")
+            {
+                target.SetProviderId(Plugin.KatsomoProviderId, media.RawPlatformId);
+            }
+        }
+    }
+
     private static RemoteSearchResult ToSearchResult(FinnishMediaItem item)
     {
         var res = new RemoteSearchResult
@@ -104,7 +172,7 @@ public class FinnishSeriesProvider : IRemoteMetadataProvider<Series, SeriesInfo>
             ImageUrl = item.ImageUrl,
             SearchProviderName = Plugin.ProviderName
         };
-        res.SetProviderId(Plugin.ProviderId, item.CompositeId);
+        ApplyProviderIds(res, item);
         return res;
     }
 }

@@ -36,9 +36,10 @@ public class FinnishImageProvider : IRemoteImageProvider
     public async Task<IEnumerable<RemoteImageInfo>> GetImages(BaseItem item, CancellationToken cancellationToken)
     {
         var list = new List<RemoteImageInfo>();
-        if (item.ProviderIds.TryGetValue(Plugin.ProviderId, out var compositeId) && !string.IsNullOrWhiteSpace(compositeId))
+        string? explicitId = FinnishSeriesProvider.ResolveExplicitCompositeId(item.ProviderIds, item.Path);
+        if (!string.IsNullOrWhiteSpace(explicitId))
         {
-            var media = await _apiClient.GetSeriesByIdAsync(compositeId, cancellationToken).ConfigureAwait(false);
+            var media = await _apiClient.GetSeriesByIdAsync(explicitId, cancellationToken).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(media?.ImageUrl))
             {
                 list.Add(new RemoteImageInfo

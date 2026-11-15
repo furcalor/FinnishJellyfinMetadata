@@ -29,9 +29,30 @@ public class FinnishEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
 
     public string Name => "Finnish Streaming Episode Provider";
 
-    public Task<IEnumerable<RemoteSearchResult>> GetSearchResults(EpisodeInfo searchInfo, CancellationToken cancellationToken)
+    public async Task<IEnumerable<RemoteSearchResult>> GetSearchResults(EpisodeInfo searchInfo, CancellationToken cancellationToken)
     {
-        return Task.FromResult<IEnumerable<RemoteSearchResult>>(Array.Empty<RemoteSearchResult>());
+        var results = new List<RemoteSearchResult>();
+        string? explicitId = FinnishSeriesProvider.ResolveExplicitCompositeId(searchInfo.ProviderIds, searchInfo.Path);
+        if (!string.IsNullOrWhiteSpace(explicitId))
+        {
+            var media = await _apiClient.GetSeriesByIdAsync(explicitId, cancellationToken).ConfigureAwait(false);
+            if (media != null)
+            {
+                var res = new RemoteSearchResult
+                {
+                    Name = $"{media.Title} [{media.Source}]",
+                    Overview = media.Overview,
+                    ProductionYear = media.ProductionYear,
+                    PremiereDate = media.PremiereDate,
+                    ImageUrl = media.ImageUrl,
+                    SearchProviderName = Plugin.ProviderName
+                };
+                FinnishSeriesProvider.ApplyProviderIds(res, media);
+                results.Add(res);
+            }
+        }
+
+        return results;
     }
 
     public async Task<MetadataResult<Episode>> GetMetadata(EpisodeInfo info, CancellationToken cancellationToken)
@@ -39,8 +60,9 @@ public class FinnishEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
         var result = new MetadataResult<Episode>();
         var config = Plugin.Instance?.Configuration ?? new PluginConfiguration();
 
-        // 1. Parse filename for "S01E01", "Kausi 01 - Jakso 03", and "YYYY-MM-DD - Jakso XX - Title"
+        // 1. Parse filename for "S01E01", "Kausi 01 - Jakso 03", "YYYY-MM-DD - Jakso XX - Title", and embedded IDs
         var parsedFile = FinnishFilenameParser.Parse(info.Path);
+        FlickFetchTextHelper.PopulateIdsFromDirectory(info.Path, parsedFile);
 
         int? seasonNum = parsedFile.SeasonNumber ?? info.ParentIndexNumber;
         int? episodeNum = parsedFile.EpisodeNumber ?? info.IndexNumber;
@@ -54,23 +76,49 @@ public class FinnishEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
             localSidecarOverview = FlickFetchTextHelper.ReadSidecarDescription(info.Path);
         }
 
-        // 3. Query remote API (Areena / Ruutu / Katsomo)
-        info.SeriesProviderIds.TryGetValue(Plugin.ProviderId, out var seriesCompositeId);
-        string seriesName = !string.IsNullOrWhiteSpace(parsedFile.SeriesName)
-            ? parsedFile.SeriesName
-            : GetSeriesNameFromPath(info.Path) ?? info.Name;
-
+        // 3. Check if the episode itself has an explicit ID (in Jellyfin UI or filename)
+        string? explicitEpisodeId = FinnishSeriesProvider.ResolveExplicitCompositeId(info.ProviderIds, null);
         FinnishEpisodeItem? remoteEp = null;
-        if (!string.IsNullOrWhiteSpace(seriesName))
+
+        if (!string.IsNullOrWhiteSpace(explicitEpisodeId))
         {
-            remoteEp = await _apiClient.FindEpisodeAsync(
-                seriesCompositeId,
-                seriesName,
-                seasonNum,
-                episodeNum,
-                epTitleFromFilename ?? info.Name,
-                airDateFromFilename,
-                cancellationToken).ConfigureAwait(false);
+            var directMedia = await _apiClient.GetSeriesByIdAsync(explicitEpisodeId, cancellationToken).ConfigureAwait(false);
+            if (directMedia != null)
+            {
+                remoteEp = new FinnishEpisodeItem
+                {
+                    CompositeId = directMedia.CompositeId,
+                    RawPlatformId = directMedia.RawPlatformId,
+                    Source = directMedia.Source,
+                    Title = directMedia.Title,
+                    Overview = directMedia.Overview,
+                    SeasonNumber = seasonNum,
+                    EpisodeNumber = episodeNum,
+                    AirDate = airDateFromFilename ?? directMedia.PremiereDate,
+                    ThumbnailUrl = directMedia.ImageUrl
+                };
+            }
+        }
+
+        // 4. Otherwise resolve via Series ID or Series + Episode title search
+        if (remoteEp == null)
+        {
+            string? seriesCompositeId = FinnishSeriesProvider.ResolveExplicitCompositeId(info.SeriesProviderIds, info.Path);
+            string seriesName = !string.IsNullOrWhiteSpace(parsedFile.SeriesName)
+                ? parsedFile.SeriesName
+                : GetSeriesNameFromPath(info.Path) ?? info.Name;
+
+            if (!string.IsNullOrWhiteSpace(seriesName))
+            {
+                remoteEp = await _apiClient.FindEpisodeAsync(
+                    seriesCompositeId,
+                    seriesName,
+                    seasonNum,
+                    episodeNum,
+                    epTitleFromFilename ?? info.Name,
+                    airDateFromFilename,
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
 
         if (localSidecarOverview == null && remoteEp == null && epTitleFromFilename == null && !episodeNum.HasValue)
@@ -101,6 +149,21 @@ public class FinnishEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
         if (remoteEp != null && !string.IsNullOrWhiteSpace(remoteEp.CompositeId))
         {
             episode.SetProviderId(Plugin.ProviderId, remoteEp.CompositeId);
+            if (!string.IsNullOrEmpty(remoteEp.RawPlatformId))
+            {
+                if (remoteEp.Source == "YleAreena")
+                {
+                    episode.SetProviderId(Plugin.YleProviderId, remoteEp.RawPlatformId);
+                }
+                else if (remoteEp.Source == "Ruutu")
+                {
+                    episode.SetProviderId(Plugin.RuutuProviderId, remoteEp.RawPlatformId);
+                }
+                else if (remoteEp.Source == "Katsomo")
+                {
+                    episode.SetProviderId(Plugin.KatsomoProviderId, remoteEp.RawPlatformId);
+                }
+            }
         }
 
         result.Item = episode;
@@ -139,6 +202,7 @@ public class FinnishEpisodeProvider : IRemoteMetadataProvider<Episode, EpisodeIn
             }
         }
 
+        folderName = Regex.Replace(folderName, @"\s*\[[^\]]+\]", string.Empty);
         return Regex.Replace(folderName, @"\s*\(\d{4}\)\s*$", string.Empty).Trim();
     }
 }

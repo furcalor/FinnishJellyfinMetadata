@@ -13,6 +13,9 @@ public sealed class ParsedFinnishFilename
     public int? EpisodeNumber { get; set; }
     public DateTime? AirDate { get; set; }
     public string EpisodeTitle { get; set; } = string.Empty;
+    public string? YleId { get; set; }
+    public string? RuutuId { get; set; }
+    public string? KatsomoId { get; set; }
 }
 
 public static partial class FinnishFilenameParser
@@ -23,11 +26,6 @@ public static partial class FinnishFilenameParser
     private static partial Regex StandardSxxExxRegex();
 
     // Pattern 2: Finnish "Kausi XX - Jakso YY" or "Jakso YY" (with optional YYYY-MM-DD air date before or after Kausi/Jakso)
-    // Examples:
-    // - "Erittäin salainen - Vakoilua Suomessa - 2024-02-05 - Jakso 01 - Seksiä, rakkautta ja vakoilua"
-    // - "Sarjan Nimi - Kausi 01 - Jakso 03 - Jakson nimi"
-    // - "Sarjan Nimi (2025) - 2025-03-10 - Kausi 01 - Jakso 03 - Jakson nimi"
-    // - "Sarjan Nimi - Kausi 1 Jakso 3 - Jakson nimi"
     [GeneratedRegex(@"^(?<series>.+?)\s*(?:[-_ ]\s*(?<date1>\d{4}-\d{2}-\d{2}))?\s*(?:[-_ ]\s*Kausi\s*(?<season>\d{1,3}))?\s*[-_ ]*\s*Jakso\s*(?<episode>\d{1,4})(?:\s*[-_ ]\s*(?<date2>\d{4}-\d{2}-\d{2}))?(?:\s*[-_ ]+\s*(?<title>.+))?$", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex JaksoPatternRegex();
 
@@ -35,9 +33,48 @@ public static partial class FinnishFilenameParser
     [GeneratedRegex(@"(?:Kausi|Season)\s*(?<season>\d{1,3})", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex FolderSeasonRegex();
 
-    // Helper to strip (YYYY) from a series title if present
+    // Helper to strip (YYYY) and [id] tags from a series title if present
     [GeneratedRegex(@"^(?<cleanSeries>.+?)\s*\((?<year>\d{4})\)\s*$", RegexOptions.Compiled)]
     private static partial Regex TrailingYearRegex();
+
+    // Explicit platform IDs in folder/file path or URLs:
+    // Matches "1-4294832", "areena-1-4294832", "https://areena.yle.fi/1-4294832"
+    [GeneratedRegex(@"(?:areena\.yle\.fi/|areena[-_:\s]|\[|\b)(?<yleid>1-\d{5,10})(?:\]|\b)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex YleIdTokenRegex();
+
+    // Matches "ruutu.fi/series/4839488", "ruutu.fi/video/123456", "[ruutu-4839488]", "ruutu:4839488"
+    [GeneratedRegex(@"(?:ruutu\.fi/(?:series|video|ohjelmat)/|ruutu[-_:\s])(?<ruutuid>[a-z0-9\-]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex RuutuIdTokenRegex();
+
+    // Matches "katsomo.fi/sarja/versus-33006241", "[katsomo-33006241]", "katsomo:33006241"
+    [GeneratedRegex(@"(?:katsomo\.fi/(?:sarja|ohjelma)/|mtvuutiset\.fi/katsomo/ohjelma/|katsomo[-_:\s])(?<katsomoid>[a-z0-9\-]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex KatsomoIdTokenRegex();
+
+    public static void ExtractIdsFromText(string? input, ParsedFinnishFilename target)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return;
+        }
+
+        var yleMatch = YleIdTokenRegex().Match(input);
+        if (yleMatch.Success && string.IsNullOrEmpty(target.YleId))
+        {
+            target.YleId = yleMatch.Groups["yleid"].Value;
+        }
+
+        var ruutuMatch = RuutuIdTokenRegex().Match(input);
+        if (ruutuMatch.Success && string.IsNullOrEmpty(target.RuutuId))
+        {
+            target.RuutuId = ruutuMatch.Groups["ruutuid"].Value;
+        }
+
+        var katsomoMatch = KatsomoIdTokenRegex().Match(input);
+        if (katsomoMatch.Success && string.IsNullOrEmpty(target.KatsomoId))
+        {
+            target.KatsomoId = katsomoMatch.Groups["katsomoid"].Value;
+        }
+    }
 
     public static ParsedFinnishFilename Parse(string? filePath)
     {
@@ -47,7 +84,13 @@ public static partial class FinnishFilenameParser
             return result;
         }
 
+        // Check full path for embedded IDs like "Kekkonen (2017) [1-4294832]" or "[ruutu-4839488]"
+        ExtractIdsFromText(filePath, result);
+
         string fileName = Path.GetFileNameWithoutExtension(filePath);
+        // Strip bracketed tags like [1-4294832] or [ruutu-4839488] before parsing title
+        fileName = Regex.Replace(fileName, @"\s*\[[^\]]+\]", string.Empty).Trim();
+
         int? folderSeason = ExtractSeasonFromParentDirectory(filePath);
 
         // 1. Try Finnish "Kausi XX - Jakso YY" / "Jakso YY" pattern first
@@ -150,11 +193,11 @@ public static partial class FinnishFilenameParser
 
     private static void ExtractSeriesAndYear(string rawSeries, ParsedFinnishFilename target)
     {
-        var trimmed = rawSeries.Trim(' ', '-', '_');
+        var trimmed = Regex.Replace(rawSeries, @"\s*\[[^\]]+\]", string.Empty).Trim(' ', '-', '_', '"');
         var yearMatch = TrailingYearRegex().Match(trimmed);
         if (yearMatch.Success)
         {
-            target.SeriesName = yearMatch.Groups["cleanSeries"].Value.Trim(' ', '-', '_');
+            target.SeriesName = yearMatch.Groups["cleanSeries"].Value.Trim(' ', '-', '_', '"');
             if (int.TryParse(yearMatch.Groups["year"].Value, out var y))
             {
                 target.ProductionYear = y;
