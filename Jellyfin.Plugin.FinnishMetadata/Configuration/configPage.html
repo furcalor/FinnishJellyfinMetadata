@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Finnish Metadata (Areena, Ruutu, Katsomo)</title>
+</head>
+<body>
+    <div id="FinnishMetadataConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="FinnishMetadataConfigForm">
+                    <div class="sectionTitleContainer flex align-items-center">
+                        <h2 class="sectionTitle">Finnish Streaming Metadata (Areena, Ruutu, Katsomo)</h2>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableYleAreena" name="EnableYleAreena" type="checkbox" is="emby-checkbox" />
+                            <span>Enable Yle Areena (areena.yle.fi)</span>
+                        </label>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableRuutu" name="EnableRuutu" type="checkbox" is="emby-checkbox" />
+                            <span>Enable Ruutu (ruutu.fi)</span>
+                        </label>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableKatsomo" name="EnableKatsomo" type="checkbox" is="emby-checkbox" />
+                            <span>Enable MTV Katsomo (katsomo.fi)</span>
+                        </label>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="ReadFlickFetchTxtSidecar" name="ReadFlickFetchTxtSidecar" type="checkbox" is="emby-checkbox" />
+                            <span>Read FlickFetch .txt sidecar files for episode descriptions</span>
+                        </label>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="PreferLocalTxtOverRemote" name="PreferLocalTxtOverRemote" type="checkbox" is="emby-checkbox" />
+                            <span>Prefer local .txt description over remote web description</span>
+                        </label>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="YleAppId">Yle API App ID (Optional - uses web scraper if blank)</label>
+                        <input id="YleAppId" name="YleAppId" type="text" is="emby-input" />
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="YleAppKey">Yle API App Key (Optional)</label>
+                        <input id="YleAppKey" name="YleAppKey" type="password" is="emby-input" />
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            var FinnishMetadataConfig = {
+                pluginUniqueId: 'b87c6a12-49e2-4f9b-9c2a-51f23c84a901'
+            };
+
+            document.querySelector('#FinnishMetadataConfigPage')
+                .addEventListener('pageshow', function() {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(FinnishMetadataConfig.pluginUniqueId).then(function (config) {
+                        document.querySelector('#EnableYleAreena').checked = config.EnableYleAreena;
+                        document.querySelector('#EnableRuutu').checked = config.EnableRuutu;
+                        document.querySelector('#EnableKatsomo').checked = config.EnableKatsomo;
+                        document.querySelector('#ReadFlickFetchTxtSidecar').checked = config.ReadFlickFetchTxtSidecar;
+                        document.querySelector('#PreferLocalTxtOverRemote').checked = config.PreferLocalTxtOverRemote;
+                        document.querySelector('#YleAppId').value = config.YleAppId || '';
+                        document.querySelector('#YleAppKey').value = config.YleAppKey || '';
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+            document.querySelector('#FinnishMetadataConfigForm')
+                .addEventListener('submit', function(e) {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(FinnishMetadataConfig.pluginUniqueId).then(function (config) {
+                        config.EnableYleAreena = document.querySelector('#EnableYleAreena').checked;
+                        config.EnableRuutu = document.querySelector('#EnableRuutu').checked;
+                        config.EnableKatsomo = document.querySelector('#EnableKatsomo').checked;
+                        config.ReadFlickFetchTxtSidecar = document.querySelector('#ReadFlickFetchTxtSidecar').checked;
+                        config.PreferLocalTxtOverRemote = document.querySelector('#PreferLocalTxtOverRemote').checked;
+                        config.YleAppId = document.querySelector('#YleAppId').value;
+                        config.YleAppKey = document.querySelector('#YleAppKey').value;
+                        ApiClient.updatePluginConfiguration(FinnishMetadataConfig.pluginUniqueId, config).then(function (result) {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    });
+                    e.preventDefault();
+                    return false;
+                });
+        </script>
+    </div>
+</body>
+</html>

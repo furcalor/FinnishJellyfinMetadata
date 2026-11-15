@@ -1,0 +1,17 @@
+---
+name: "Finnish Streaming Metadata"
+guid: "b87c6a12-49e2-4f9b-9c2a-51f23c84a901"
+version: "1.0.0.0"
+targetAbi: "10.10.0.0"
+framework: "net8.0"
+overview: "Metadata and image provider for Yle Areena, Ruutu, and MTV Katsomo with FlickFetch .txt sidecar support."
+description: >
+  Fetches Finnish TV series, episode, and movie metadata from areena.yle.fi, ruutu.fi, and katsomo.fi.
+  Includes native parsing for SxxExx, 'Kausi XX - Jakso YY', and 'YYYY-MM-DD - Jakso YY' filenames,
+  plus automatic local FlickFetch .txt sidecar synopsis reading.
+category: "Metadata"
+owner: "FinnishMetadata"
+artifacts:
+- "Jellyfin.Plugin.FinnishMetadata.dll"
+changelog: >
+  1.0.0.0 - Initial release with Yle Areena, Ruutu, MTV Katsomo, Kausi/Jakso parser, and FlickFetch .txt sidecar support.
